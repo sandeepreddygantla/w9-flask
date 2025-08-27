@@ -430,7 +430,7 @@ body {
 }
 
 .json-viewer {
-    height: calc(100% - 60px);
+    height: calc(100% - 120px); /* Reduced to make room for button */
     background: #F8FAFC;
     border-radius: 8px;
     overflow: auto;
@@ -459,10 +459,12 @@ body {
     font-style: italic;
 }
 
-/* Download Section */
-.download-section {
-    text-align: center;
-    margin: 40px 0;
+/* JSON Actions (Download Button) */
+.json-actions {
+    margin-top: 16px;
+    text-align: right;
+    padding-top: 12px;
+    border-top: 1px solid #E5E7EB;
 }
 
 .download-btn {

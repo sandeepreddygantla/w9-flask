@@ -48,14 +48,22 @@ class W9Extractor {
 
     bindEvents() {
         // File upload events
-        this.browseBtn.addEventListener('click', () => this.fileInput.click());
+        this.browseBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent bubbling to parent upload area
+            this.fileInput.click();
+        });
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         
         // Drag and drop events
         this.uploadArea.addEventListener('dragover', (e) => this.handleDragOver(e));
         this.uploadArea.addEventListener('dragleave', (e) => this.handleDragLeave(e));
         this.uploadArea.addEventListener('drop', (e) => this.handleDrop(e));
-        this.uploadArea.addEventListener('click', () => this.fileInput.click());
+        this.uploadArea.addEventListener('click', (e) => {
+            // Only trigger if not clicking on browse button or its children
+            if (e.target !== this.browseBtn && !this.browseBtn.contains(e.target)) {
+                this.fileInput.click();
+            }
+        });
         
         // File management events
         this.selectAllBtn.addEventListener('click', () => this.toggleSelectAll());

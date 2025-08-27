@@ -27,3 +27,4 @@ README.md
 /venv/
 /uploads/
 .env.example
+/temp_uploads/
