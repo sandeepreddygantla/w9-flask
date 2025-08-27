@@ -398,13 +398,20 @@ body {
     border-radius: 8px;
     overflow: auto;
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
 }
 
 #pdfCanvas {
     max-width: 100%;
-    height: auto;
+    max-height: 100%;
     display: block;
     margin: 0 auto;
+    border: 1px solid #D1D5DB;
+    border-radius: 4px;
+    background: var(--white);
 }
 
 .pdf-loading,
@@ -415,6 +422,11 @@ body {
     transform: translate(-50%, -50%);
     text-align: center;
     color: var(--dark-gray);
+    background: var(--white);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #D1D5DB;
+    min-width: 200px;
 }
 
 .json-viewer {

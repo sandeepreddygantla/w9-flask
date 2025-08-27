@@ -2,8 +2,11 @@ import os
 import httpx
 import json
 import difflib
+import shutil
+import threading
+import time
 from typing import Optional, Dict, Any
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, session
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import uuid
@@ -21,25 +24,83 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration
-UPLOAD_FOLDER = 'uploads'
+TEMP_UPLOAD_FOLDER = 'temp_uploads'
 ALLOWED_EXTENSIONS = {'pdf'}
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+SESSION_TIMEOUT_HOURS = 1
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['TEMP_UPLOAD_FOLDER'] = TEMP_UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+app.config['SECRET_KEY'] = os.urandom(24)
 
-# Ensure upload directory exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Ensure temp upload directory exists
+os.makedirs(TEMP_UPLOAD_FOLDER, exist_ok=True)
 
 # TikToken cache
 tiktoken_cache_dir = os.path.abspath("tiktoken_cache")
 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache_dir
 
 if os.path.exists(os.path.join(tiktoken_cache_dir, "9b5ad71b2ce5302211f9c61530b329a4922fc6a4")):
-    print("✅ Tokenizer cache found")
+    print("Tokenizer cache found")
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_session_folder():
+    """Get or create session-specific folder"""
+    session_id = session.get('session_id')
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        session['session_id'] = session_id
+    
+    session_folder = os.path.join(app.config['TEMP_UPLOAD_FOLDER'], f'session_{session_id}')
+    os.makedirs(session_folder, exist_ok=True)
+    return session_folder
+
+def get_unique_filename(folder, filename):
+    """Get unique filename handling duplicates like Streamlit"""
+    filepath = os.path.join(folder, filename)
+    if not os.path.exists(filepath):
+        return filename
+    
+    name, ext = os.path.splitext(filename)
+    counter = 1
+    while True:
+        new_filename = f"{name}_{counter}{ext}"
+        new_filepath = os.path.join(folder, new_filename)
+        if not os.path.exists(new_filepath):
+            return new_filename
+        counter += 1
+
+def cleanup_old_sessions():
+    """Clean up sessions older than SESSION_TIMEOUT_HOURS"""
+    if not os.path.exists(app.config['TEMP_UPLOAD_FOLDER']):
+        return
+        
+    current_time = time.time()
+    timeout_seconds = SESSION_TIMEOUT_HOURS * 3600
+    
+    try:
+        for folder_name in os.listdir(app.config['TEMP_UPLOAD_FOLDER']):
+            if folder_name.startswith('session_'):
+                folder_path = os.path.join(app.config['TEMP_UPLOAD_FOLDER'], folder_name)
+                if os.path.isdir(folder_path):
+                    folder_age = current_time - os.path.getctime(folder_path)
+                    if folder_age > timeout_seconds:
+                        shutil.rmtree(folder_path)
+                        print(f"Cleaned up old session: {folder_name}")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+
+def clear_current_session():
+    """Clear current session's files"""
+    session_id = session.get('session_id')
+    if session_id:
+        session_folder = os.path.join(app.config['TEMP_UPLOAD_FOLDER'], f'session_{session_id}')
+        if os.path.exists(session_folder):
+            shutil.rmtree(session_folder)
+        # Reset session
+        session.pop('session_id', None)
 
 def get_access_token():
     auth = "https://api.uhg.com/oauth2/token"
@@ -221,6 +282,7 @@ Only return JSON do not add explanations
 
             results.append({
                 "file": file_path,
+                "fileId": os.path.basename(file_path),
                 "response": json_data,
                 "filename": os.path.basename(file_path)
             })
@@ -228,6 +290,7 @@ Only return JSON do not add explanations
         except Exception as e:
             results.append({
                 "file": file_path,
+                "fileId": os.path.basename(file_path),
                 "response": {"error": str(e)},
                 "filename": os.path.basename(file_path)
             })
@@ -245,6 +308,12 @@ def upload_files():
         return jsonify({'error': 'No files provided'}), 400
     
     files = request.files.getlist('files')
+    
+    # Clear previous session files (like Streamlit behavior)
+    clear_current_session()
+    
+    # Get session folder
+    session_folder = get_session_folder()
     uploaded_files = []
     
     for file in files:
@@ -252,18 +321,18 @@ def upload_files():
             continue
             
         if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            # Add unique prefix to avoid conflicts
-            unique_filename = f"{uuid.uuid4().hex}_{filename}"
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            original_filename = secure_filename(file.filename)
+            # Get unique filename (handle duplicates)
+            unique_filename = get_unique_filename(session_folder, original_filename)
+            filepath = os.path.join(session_folder, unique_filename)
             file.save(filepath)
             
             # Get file size
             file_size = os.path.getsize(filepath)
             
             uploaded_files.append({
-                'id': unique_filename,
-                'name': filename,
+                'id': unique_filename,  # Just the filename, no UUID prefix
+                'name': original_filename,  # Original name for display
                 'size': file_size,
                 'path': filepath,
                 'status': 'uploaded'
@@ -280,9 +349,12 @@ def extract_data():
         if not file_ids:
             return jsonify({'error': 'No files selected for extraction'}), 400
         
+        # Get session folder
+        session_folder = get_session_folder()
+        
         file_paths = []
         for file_id in file_ids:
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file_id)
+            filepath = os.path.join(session_folder, file_id)
             if os.path.exists(filepath):
                 file_paths.append(filepath)
         
@@ -304,21 +376,24 @@ def extract_data():
 @app.route('/download/<filename>')
 def download_file(filename):
     try:
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
+        session_folder = get_session_folder()
+        return send_from_directory(session_folder, filename, as_attachment=True)
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
 
 @app.route('/preview/<filename>')
 def preview_file(filename):
     try:
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+        session_folder = get_session_folder()
+        return send_from_directory(session_folder, filename)
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
 
 @app.route('/delete/<filename>', methods=['DELETE'])
 def delete_file(filename):
     try:
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        session_folder = get_session_folder()
+        filepath = os.path.join(session_folder, filename)
         if os.path.exists(filepath):
             os.remove(filepath)
             return jsonify({'message': 'File deleted successfully'})
@@ -327,5 +402,26 @@ def delete_file(filename):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/clear-session', methods=['POST'])
+def clear_session_files():
+    """Clear all files in current session"""
+    try:
+        clear_current_session()
+        return jsonify({'message': 'Session cleared successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
+    # Clean up old sessions on startup
+    cleanup_old_sessions()
+    
+    # Start cleanup thread
+    def periodic_cleanup():
+        while True:
+            time.sleep(3600)  # Run cleanup every hour
+            cleanup_old_sessions()
+    
+    cleanup_thread = threading.Thread(target=periodic_cleanup, daemon=True)
+    cleanup_thread.start()
+    
     app.run(debug=True, host='0.0.0.0', port=5002)

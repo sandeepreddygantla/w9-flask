@@ -70,8 +70,8 @@ class W9Extractor {
     }
 
     initializePdfJs() {
-        // Set PDF.js worker path
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        // PDF.js is already initialized in HTML template
+        console.log('PDF.js initialized:', typeof pdfjsLib !== 'undefined');
     }
 
     // File Upload Handlers
@@ -93,9 +93,11 @@ class W9Extractor {
     }
 
     handleFileSelect(e) {
-        const files = Array.from(e.target.files);
-        this.uploadFiles(files);
-        // Reset input
+        if (e.target.files.length > 0) {
+            const files = Array.from(e.target.files);
+            this.uploadFiles(files);
+        }
+        // Always reset input to allow re-selecting same files
         e.target.value = '';
     }
 
@@ -128,8 +130,13 @@ class W9Extractor {
             }
 
             const result = await response.json();
-            this.uploadedFiles = [...this.uploadedFiles, ...result.files];
+            // Clear previous files (like Streamlit behavior)
+            this.uploadedFiles = result.files;
+            this.selectedFiles = [];
+            this.extractedResults = [];
+            
             this.updateFilesDisplay();
+            this.hidePreview();
             this.showToast('Files uploaded', `Successfully uploaded ${result.files.length} files.`, 'success');
 
         } catch (error) {
@@ -171,6 +178,7 @@ class W9Extractor {
                 <span class="status-badge status-ready">READY</span>
             </div>
             <div class="file-actions">
+                <button class="action-btn" onclick="w9Extractor.previewUploadedFile('${file.id}')" title="Preview">👁️</button>
                 <button class="action-btn" onclick="w9Extractor.deleteFile('${file.id}')" title="Delete">🗑️</button>
             </div>
         `;
@@ -191,6 +199,13 @@ class W9Extractor {
         this.selectedFiles.push(file.id);
         checkbox.checked = true;
         row.classList.add('selected');
+        
+        // Preview first file automatically
+        if (index === 0) {
+            setTimeout(() => {
+                this.previewUploadedFile(file.id);
+            }, 300);
+        }
 
         return row;
     }
@@ -233,19 +248,28 @@ class W9Extractor {
         this.updateFilesDisplay();
     }
 
-    clearAllFiles() {
+    async clearAllFiles() {
         if (this.uploadedFiles.length === 0) return;
         
-        this.uploadedFiles.forEach(file => {
-            this.deleteFileFromServer(file.id);
-        });
-        
-        this.uploadedFiles = [];
-        this.selectedFiles = [];
-        this.extractedResults = [];
-        this.updateFilesDisplay();
-        this.hidePreview();
-        this.showToast('Files cleared', 'All files have been removed.', 'success');
+        try {
+            // Clear session on server
+            const response = await fetch('/clear-session', {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                this.uploadedFiles = [];
+                this.selectedFiles = [];
+                this.extractedResults = [];
+                this.updateFilesDisplay();
+                this.hidePreview();
+                this.showToast('Files cleared', 'All files have been removed.', 'success');
+            } else {
+                throw new Error('Failed to clear session');
+            }
+        } catch (error) {
+            this.showToast('Clear failed', error.message, 'error');
+        }
     }
 
     async deleteFile(fileId) {
@@ -319,12 +343,18 @@ class W9Extractor {
         this.extractedResults.forEach((result, index) => {
             const option = document.createElement('option');
             option.value = index;
-            option.textContent = result.filename || `File ${index + 1}`;
+            // Use original filename for display
+            const displayName = result.filename || `File ${index + 1}`;
+            option.textContent = displayName.replace(/^[a-f0-9]{32}_/, ''); // Remove any remaining UUID prefix
             this.fileSelect.appendChild(option);
         });
 
+        this.showPreview();
+        
         if (this.extractedResults.length > 0) {
-            this.handleFilePreview(0);
+            setTimeout(() => {
+                this.handleFilePreview(0);
+            }, 200);
         }
     }
 
@@ -347,8 +377,8 @@ class W9Extractor {
         // Update JSON display
         this.displayJson(result.response);
 
-        // Load PDF preview
-        await this.loadPdfPreview(result.file);
+        // Load PDF preview - use the fileId from the result
+        await this.loadPdfPreview(result.fileId);
     }
 
     displayJson(data) {
@@ -359,15 +389,20 @@ class W9Extractor {
         this.jsonContent.textContent = JSON.stringify(data, null, 2);
     }
 
-    async loadPdfPreview(filepath) {
-        const filename = filepath.split('/').pop();
-        const pdfUrl = `/preview/${filename}`;
+    async loadPdfPreview(fileId) {
+        // Always use the fileId directly for the preview URL
+        const pdfUrl = `/preview/${fileId}`;
 
         this.pdfLoading.style.display = 'block';
         this.pdfError.style.display = 'none';
         this.pdfCanvas.style.display = 'none';
 
         try {
+            // Check if PDF.js is loaded
+            if (typeof pdfjsLib === 'undefined') {
+                throw new Error('PDF.js library not loaded');
+            }
+
             const loadingTask = pdfjsLib.getDocument(pdfUrl);
             const pdf = await loadingTask.promise;
             
@@ -382,11 +417,14 @@ class W9Extractor {
             // Calculate scale to fit container
             const container = canvas.parentElement;
             const containerWidth = container.clientWidth - 32; // Account for padding
-            const scale = containerWidth / viewport.width;
+            const scale = Math.min(containerWidth / viewport.width, 1.0); // Don't scale up
             
             const scaledViewport = page.getViewport({ scale });
             canvas.height = scaledViewport.height;
             canvas.width = scaledViewport.width;
+            
+            // Clear canvas first
+            context.clearRect(0, 0, canvas.width, canvas.height);
             
             // Render page
             await page.render({
@@ -399,10 +437,28 @@ class W9Extractor {
         } catch (error) {
             console.error('Error loading PDF:', error);
             this.pdfError.style.display = 'block';
-            this.pdfError.textContent = 'Error loading PDF preview';
+            this.pdfError.textContent = `Error loading PDF: ${error.message}`;
         } finally {
             this.pdfLoading.style.display = 'none';
         }
+    }
+
+    // Preview uploaded file before extraction
+    async previewUploadedFile(fileId) {
+        // Show preview section if hidden
+        this.fileSelector.style.display = 'none'; // Hide file selector for single file preview
+        this.previewSection.style.display = 'block';
+        this.downloadSection.style.display = 'none'; // Hide download until extraction is done
+        
+        // Clear JSON viewer
+        const jsonPlaceholder = this.jsonContent.parentElement.querySelector('.json-placeholder');
+        if (jsonPlaceholder) {
+            jsonPlaceholder.style.display = 'block';
+        }
+        this.jsonContent.textContent = '';
+        
+        // Load PDF preview
+        await this.loadPdfPreview(fileId);
     }
 
     // Download Results
