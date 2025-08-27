@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>W9 Extractor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">📄</span>
+                <h1>W9 Extractor</h1>
+            </div>
+        </header>
+
+        <!-- Hero Section -->
+        <section class="hero">
+            <h2>Instantly Extract Data from your W9 PDFs</h2>
+            <p>Securely upload your W9 form PDFs and let our smart extractor pull out the data you need. Fast, accurate, and reliable results.</p>
+        </section>
+
+        <!-- Upload Section -->
+        <section class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <h3>Upload W9 PDF Files</h3>
+                <p>Drag and drop your files here, or click to browse</p>
+                <button class="browse-btn" id="browseBtn">Browse Files</button>
+                <p class="file-info">Only PDF files are supported • Multiple files allowed</p>
+                <input type="file" id="fileInput" multiple accept=".pdf" style="display: none;">
+            </div>
+        </section>
+
+        <!-- Uploaded Files Section -->
+        <section class="uploaded-files" id="uploadedFiles" style="display: none;">
+            <div class="section-header">
+                <h3>📁 Uploaded Files</h3>
+                <div class="section-actions">
+                    <button class="select-all-btn" id="selectAllBtn">All Selected</button>
+                    <button class="clear-all-btn" id="clearAllBtn">Clear All</button>
+                </div>
+            </div>
+            
+            <div class="files-table">
+                <div class="table-header">
+                    <div class="col-checkbox">☑️</div>
+                    <div class="col-name">FILE NAME</div>
+                    <div class="col-size">SIZE</div>
+                    <div class="col-status">STATUS</div>
+                    <div class="col-actions">ACTIONS</div>
+                </div>
+                <div class="table-body" id="filesTableBody">
+                    <!-- Dynamic file rows will be inserted here -->
+                </div>
+            </div>
+            
+            <div class="files-footer">
+                <div class="files-summary" id="filesSummary">
+                    <span id="selectedCount">0</span> files selected | <span id="totalSize">0 KB</span> total size
+                </div>
+                <button class="extract-btn" id="extractBtn" disabled>Extract Files</button>
+            </div>
+        </section>
+
+        <!-- File Selector -->
+        <section class="file-selector" id="fileSelector" style="display: none;">
+            <select id="fileSelect">
+                <!-- Options will be populated dynamically -->
+            </select>
+        </section>
+
+        <!-- Preview Section -->
+        <section class="preview-section" id="previewSection" style="display: none;">
+            <div class="preview-container">
+                <div class="pdf-preview">
+                    <h3>PDF Preview</h3>
+                    <div class="pdf-viewer" id="pdfViewer">
+                        <canvas id="pdfCanvas"></canvas>
+                        <div class="pdf-loading" id="pdfLoading" style="display: none;">Loading PDF...</div>
+                        <div class="pdf-error" id="pdfError" style="display: none;">Error loading PDF</div>
+                    </div>
+                </div>
+                
+                <div class="json-preview">
+                    <h3>Extracted JSON</h3>
+                    <div class="json-viewer" id="jsonViewer">
+                        <pre id="jsonContent"></pre>
+                        <div class="json-placeholder">Select a file to view extracted data</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download Section -->
+        <section class="download-section" id="downloadSection" style="display: none;">
+            <button class="download-btn" id="downloadBtn">Download Combined JSON</button>
+        </section>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Extracting data from your PDFs...</p>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
