@@ -6,7 +6,7 @@ import shutil
 import threading
 import time
 from typing import Optional, Dict, Any
-from flask import Flask, request, jsonify, render_template, send_from_directory, session
+from flask import Flask, request, jsonify, render_template, send_from_directory, session, Blueprint, redirect
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import uuid
@@ -22,6 +22,9 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# Create a blueprint with URL prefix
+w9_bp = Blueprint('w9', __name__, url_prefix='/w9')
 
 # Configuration
 TEMP_UPLOAD_FOLDER = 'temp_uploads'
@@ -297,12 +300,12 @@ Only return JSON do not add explanations
 
     return results
 
-# Routes
-@app.route('/')
+# Routes with /w9 prefix
+@w9_bp.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/upload', methods=['POST'])
+@w9_bp.route('/upload', methods=['POST'])
 def upload_files():
     if 'files' not in request.files:
         return jsonify({'error': 'No files provided'}), 400
@@ -340,7 +343,7 @@ def upload_files():
     
     return jsonify({'files': uploaded_files})
 
-@app.route('/extract', methods=['POST'])
+@w9_bp.route('/extract', methods=['POST'])
 def extract_data():
     try:
         data = request.json
@@ -373,7 +376,7 @@ def extract_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/download/<filename>')
+@w9_bp.route('/download/<filename>')
 def download_file(filename):
     try:
         session_folder = get_session_folder()
@@ -381,7 +384,7 @@ def download_file(filename):
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
 
-@app.route('/preview/<filename>')
+@w9_bp.route('/preview/<filename>')
 def preview_file(filename):
     try:
         session_folder = get_session_folder()
@@ -389,7 +392,7 @@ def preview_file(filename):
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
 
-@app.route('/delete/<filename>', methods=['DELETE'])
+@w9_bp.route('/delete/<filename>', methods=['DELETE'])
 def delete_file(filename):
     try:
         session_folder = get_session_folder()
@@ -402,7 +405,7 @@ def delete_file(filename):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/clear-session', methods=['POST'])
+@w9_bp.route('/clear-session', methods=['POST'])
 def clear_session_files():
     """Clear all files in current session"""
     try:
@@ -410,6 +413,31 @@ def clear_session_files():
         return jsonify({'message': 'Session cleared successfully'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@w9_bp.route('/static/<path:filename>')
+def static_files(filename):
+    """Serve static files with proper MIME types"""
+    response = send_from_directory('static', filename)
+
+    # Set proper MIME types
+    if filename.endswith('.css'):
+        response.headers['Content-Type'] = 'text/css'
+    elif filename.endswith('.js'):
+        response.headers['Content-Type'] = 'application/javascript'
+    elif filename.endswith('.map'):
+        response.headers['Content-Type'] = 'application/json'
+
+    return response
+
+# Register the blueprint
+app.register_blueprint(w9_bp)
+
+@app.route('/')
+def root():
+    """Root redirect to w9 path."""
+    return redirect('/w9/')
+
 
 if __name__ == '__main__':
     # Clean up old sessions on startup
@@ -424,4 +452,5 @@ if __name__ == '__main__':
     cleanup_thread = threading.Thread(target=periodic_cleanup, daemon=True)
     cleanup_thread.start()
     
+    print("W9 Extractor running at: http://localhost:5002/w9")
     app.run(debug=True, host='0.0.0.0', port=5002)

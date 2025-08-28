@@ -4,6 +4,7 @@ class W9Extractor {
         this.uploadedFiles = [];
         this.extractedResults = [];
         this.selectedFiles = [];
+        this.baseUrl = '/w9'; // Base URL for all API calls
         
         this.initializeElements();
         this.bindEvents();
@@ -128,7 +129,7 @@ class W9Extractor {
 
         try {
             this.showLoading(true);
-            const response = await fetch('/upload', {
+            const response = await fetch(`${this.baseUrl}/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -261,7 +262,7 @@ class W9Extractor {
         
         try {
             // Clear session on server
-            const response = await fetch('/clear-session', {
+            const response = await fetch(`${this.baseUrl}/clear-session`, {
                 method: 'POST'
             });
             
@@ -295,7 +296,7 @@ class W9Extractor {
     }
 
     async deleteFileFromServer(fileId) {
-        const response = await fetch(`/delete/${fileId}`, {
+        const response = await fetch(`${this.baseUrl}/delete/${fileId}`, {
             method: 'DELETE'
         });
         if (!response.ok) {
@@ -312,7 +313,7 @@ class W9Extractor {
 
         try {
             this.showLoading(true);
-            const response = await fetch('/extract', {
+            const response = await fetch(`${this.baseUrl}/extract`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -399,7 +400,7 @@ class W9Extractor {
 
     async loadPdfPreview(fileId) {
         // Always use the fileId directly for the preview URL
-        const pdfUrl = `/preview/${fileId}`;
+        const pdfUrl = `${this.baseUrl}/preview/${fileId}`;
 
         this.pdfLoading.style.display = 'block';
         this.pdfError.style.display = 'none';
